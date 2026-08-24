@@ -1,4 +1,4 @@
-from fastapi import Depends, APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import Depends, Query, APIRouter, UploadFile, File, HTTPException, BackgroundTasks
 
 from app.database.models import ImportJob, ImportRecord
 from app.database.connection import get_db
@@ -6,6 +6,7 @@ from app.schemas.import_job import ImportJobResponse, ImportStatus
 from app.schemas.import_record import ImportRecordsResponse
 from app.services.import_service import create_import_job, process_import
 from sqlalchemy.orm import Session
+from app.services.record_services import get_import_records
 
 router = APIRouter(
     prefix="/api/imports",
@@ -67,14 +68,16 @@ def get_import_status(job_id: str, db: Session = Depends(get_db)):
     )
 
 
-@router.get(
-    "/{job_id}/records",
-    response_model=ImportRecordsResponse
-)
-def get_import_records(
+@router.get("/{job_id}/records", response_model=ImportRecordsResponse)
+def get_records(
     job_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: str | None = None,
+    valid: bool | None = None,
     db: Session = Depends(get_db)
 ):
+    """Route that delegates record querying to the service layer."""
     job = (
         db.query(ImportJob)
         .filter(ImportJob.id == job_id)
@@ -82,18 +85,22 @@ def get_import_records(
     )
 
     if not job:
-        raise HTTPException(
-            status_code=404,
-            detail="Import job not found"
-        )
+        raise HTTPException(status_code=404, detail="Import job not found")
 
-    records = (
-        db.query(ImportRecord)
-        .filter(ImportRecord.job_id == job_id)
-        .all()
+    records, total, total_pages = get_import_records(
+        db=db,
+        job_id=job_id,
+        page=page,
+        page_size=page_size,
+        search=search,
+        valid=valid
     )
 
     return ImportRecordsResponse(
         job_id=job_id,
-        records=records
+        records=records,
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=total_pages
     )
