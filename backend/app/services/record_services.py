@@ -1,5 +1,4 @@
 from math import ceil
-from typing import List, Optional, Tuple
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -12,13 +11,9 @@ def get_import_records(
     job_id: str,
     page: int,
     page_size: int,
-    search: Optional[str],
-    valid: Optional[bool]
-) -> Tuple[List[ImportRecord], int, int]:
-    """Retrieve paginated import records for a job.
-
-    Returns (records, total, total_pages).
-    """
+    search: str | None,
+    valid: bool | None
+):
 
     query = (
         db.query(ImportRecord)
@@ -54,6 +49,6 @@ def get_import_records(
         .all()
     )
 
-    total_pages = ceil(total / page_size) if page_size else 0
+    total_pages = ceil(total / page_size)
 
     return records, total, total_pages
