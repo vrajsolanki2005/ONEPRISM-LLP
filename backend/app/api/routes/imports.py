@@ -33,6 +33,9 @@ def ping():
     }
 
 
+MAX_FILE_SIZE = 15 * 1024 * 1024  # 15 MB
+
+
 @router.post("/", response_model=ImportJobResponse)
 async def create_import(
     background_tasks: BackgroundTasks,
@@ -50,6 +53,21 @@ async def create_import(
             status_code=400,
             detail="Invalid file type. Only CSV files are allowed"
         )
+
+    contents = await file.read()
+    if len(contents) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is empty"
+        )
+
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail="File size exceeds the 15 MB limit"
+        )
+
+    await file.seek(0)
 
     try:
         job = create_import_job(

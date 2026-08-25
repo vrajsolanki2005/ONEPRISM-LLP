@@ -140,6 +140,7 @@ function filenameFromDisposition(header: unknown): string | null {
 /** GET /api/imports/{jobId}/download → save the valid-records CSV locally. */
 export async function downloadValidCsv(jobId: string, sourceFilename?: string): Promise<void> {
   const response = await client.get(`/api/imports/${encodeURIComponent(jobId)}/download`, {
+    params: { valid_only: true },
     responseType: "blob",
     timeout: 60_000,
   });

@@ -1,0 +1,11 @@
+name,email,phone,company,city
+Vraj Solanki,vraj.solanki@gmail.com,9876543210,TechNova,Vadodara
+Rahul Sharma,rahul.sharma@gmail.com,9876543211,Infosys,Ahmedabad
+Priya Patel,priya.patel@gmail.com,9876543212,WebWorks,Surat
+Amit Shah,amit.shah@gmail.com,9876543213,CloudTech,Rajkot
+Neha Mehta,neha.mehta@gmail.com,9876543214,DataLabs,Mumbai
+Invalid Email,invalid-email,9876543220,TestCorp,Vadodara
+Invalid Phone,invalid.phone@gmail.com,123,TestCorp,Ahmedabad
+Missing Email,,9876543221,TestCorp,Surat
+Duplicate Vraj,vraj.solanki@gmail.com,9999999999,AnotherCorp,Ahmedabad
+Duplicate Rahul,rahul.sharma@gmail.com,9999999998,AnotherCorp,Surat
