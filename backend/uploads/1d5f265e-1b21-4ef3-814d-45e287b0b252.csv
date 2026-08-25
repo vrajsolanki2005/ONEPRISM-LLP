@@ -1,0 +1,4 @@
+name,email,phone,company,city
+Aarav Sharma,aarav.sharma@tcs.com,9876543210,Tata Consultancy Services,Mumbai
+Priya Patel,priya.patel@infosys.com,9823456789,Infosys,Bengaluru
+Invalid User,bad-email,123,InvalidCo,

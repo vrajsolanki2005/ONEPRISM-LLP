@@ -24,6 +24,6 @@ class ImportRecordsResponse(BaseModel):
     records: list[ImportRecordResponse]
 
     page: int
-    page_size: int
+    limit: int
     total: int
     total_pages: int

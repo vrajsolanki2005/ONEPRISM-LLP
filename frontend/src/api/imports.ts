@@ -262,11 +262,18 @@ export async function getImportRecords(
 ): Promise<RecordsPage> {
   const query: Record<string, string | number | boolean> = {
     page: params.page,
+    limit: params.page_size,
     page_size: params.page_size,
   };
   if (params.search && params.search.trim()) query.search = params.search.trim();
-  if (params.filter === "valid") query.valid = true;
-  if (params.filter === "invalid") query.valid = false;
+  if (params.filter === "valid") {
+    query.is_valid = true;
+    query.valid = true;
+  }
+  if (params.filter === "invalid") {
+    query.is_valid = false;
+    query.valid = false;
+  }
 
   const response = await client.get(
     `/api/imports/${encodeURIComponent(jobId)}/records`,
@@ -278,12 +285,10 @@ export async function getImportRecords(
 /** Lightweight reachability probe used for the sidebar status indicator. */
 export async function pingApi(): Promise<boolean> {
   try {
-    // Any HTTP response (even 404/405) proves the server is reachable.
-    await client.get("/api/imports/__ping__", {
+    const response = await client.get("/api/imports/ping", {
       timeout: 5_000,
-      validateStatus: () => true,
     });
-    return true;
+    return response.status === 200;
   } catch {
     return false;
   }

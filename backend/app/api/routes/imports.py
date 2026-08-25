@@ -1,52 +1,35 @@
+from math import ceil
+
 from fastapi import (
     Depends,
-    Query,
     APIRouter,
     UploadFile,
     File,
     HTTPException,
     BackgroundTasks,
+    Query,
 )
-import csv
-import io
-
-from fastapi.responses import StreamingResponse
-
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database.models import ImportJob, ImportRecord
 from app.database.connection import get_db
-
-from app.schemas.import_job import (
-    ImportJobResponse,
-    ImportStatus,
-)
-
-from app.schemas.import_record import (
-    ImportRecordResponse,
-    ImportRecordsResponse,
-)
-
-from app.services.import_service import (
-    create_import_job,
-    process_import,
-)
-
-from app.services.record_services import get_import_records
+from app.schemas.import_job import ImportJobResponse, ImportStatus
+from app.schemas.import_record import ImportRecordsResponse
+from app.services.import_service import create_import_job, process_import
 
 
 router = APIRouter(
     prefix="/api/imports",
-    tags=["imports"],
+    tags=["imports"]
 )
 
 
-# IMPORTANT: static route BEFORE /{job_id}
 @router.get("/ping")
 def ping():
     return {
         "status": "ok",
-        "message": "Import API is running",
+        "message": "Import API is running"
     }
 
 
@@ -54,43 +37,34 @@ def ping():
 async def create_import(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db)
 ):
     if not file.filename:
         raise HTTPException(
             status_code=400,
-            detail="No file uploaded",
+            detail="No file uploaded"
         )
 
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(
             status_code=400,
-            detail="Invalid file type. Only CSV files are allowed",
+            detail="Invalid file type. Only CSV files are allowed"
         )
-
-    contents = await file.read()
-    size = len(contents)
-
-    await file.seek(0)
-
-    print("Filename:", file.filename)
-    print("Content-type:", file.content_type)
-    print("File size:", size)
 
     try:
         job = create_import_job(
             file=file,
-            db=db,
+            db=db
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to create import job: {e}",
+            detail="Failed to create import job"
         )
 
     background_tasks.add_task(
         process_import,
-        job.id,
+        job.id
     )
 
     return ImportJobResponse(
@@ -100,17 +74,17 @@ async def create_import(
         total_records=job.total_records,
         valid_records=job.valid_records,
         invalid_records=job.invalid_records,
-        duplicate_records=job.duplicate_records,
+        duplicate_records=job.duplicate_records
     )
 
 
 @router.get(
     "/{job_id}",
-    response_model=ImportJobResponse,
+    response_model=ImportJobResponse
 )
 def get_import_status(
     job_id: str,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db)
 ):
     job = (
         db.query(ImportJob)
@@ -121,7 +95,7 @@ def get_import_status(
     if not job:
         raise HTTPException(
             status_code=404,
-            detail="Import job not found",
+            detail="Import job not found"
         )
 
     return ImportJobResponse(
@@ -131,22 +105,75 @@ def get_import_status(
         total_records=job.total_records,
         valid_records=job.valid_records,
         invalid_records=job.invalid_records,
-        duplicate_records=job.duplicate_records,
+        duplicate_records=job.duplicate_records
     )
 
 
 @router.get(
     "/{job_id}/records",
-    response_model=ImportRecordsResponse,
+    response_model=ImportRecordsResponse
 )
-def get_records(
+def get_import_records(
     job_id: str,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    search: str | None = None,
-    valid: bool | None = None,
-    db: Session = Depends(get_db),
+
+    # Search
+    search: str | None = Query(
+        default=None,
+        description="Search name, email, phone, company, or city"
+    ),
+
+    # Filters
+    is_valid: bool | None = Query(
+        default=None,
+        description="Filter by validation status"
+    ),
+    valid: bool | None = Query(
+        default=None,
+        description="Filter by validation status (alias)"
+    ),
+
+    city: str | None = Query(
+        default=None,
+        description="Filter by city"
+    ),
+
+    company: str | None = Query(
+        default=None,
+        description="Filter by company"
+    ),
+
+    # Pagination
+    page: int = Query(
+        default=1,
+        ge=1,
+        description="Page number"
+    ),
+
+    limit: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+        description="Number of records per page"
+    ),
+    page_size: int | None = Query(
+        default=None,
+        ge=1,
+        le=100,
+        description="Number of records per page (alias)"
+    ),
+
+    db: Session = Depends(get_db)
 ):
+    # Handle alias parameters if passed
+    if is_valid is None and valid is not None:
+        is_valid = valid
+    if page_size is not None:
+        limit = page_size
+
+    # ---------------------------------------------------------
+    # Check job
+    # ---------------------------------------------------------
+
     job = (
         db.query(ImportJob)
         .filter(ImportJob.id == job_id)
@@ -156,88 +183,95 @@ def get_records(
     if not job:
         raise HTTPException(
             status_code=404,
-            detail="Import job not found",
+            detail="Import job not found"
         )
 
-    records, total, total_pages = get_import_records(
-        db=db,
-        job_id=job_id,
-        page=page,
-        page_size=page_size,
-        search=search,
-        valid=valid,
-    )
+    # ---------------------------------------------------------
+    # Base query
+    # ---------------------------------------------------------
 
-    return ImportRecordsResponse(
-        job_id=job_id,
-        records=[
-            ImportRecordResponse.model_validate(record)
-            for record in records
-        ],
-        page=page,
-        page_size=page_size,
-        total=total,
-        total_pages=total_pages,
-    )
-
-@router.get("/{job_id}/download")
-def download_valid_records(
-    job_id: str,
-    db: Session = Depends(get_db),
-):
-    job = (
-        db.query(ImportJob)
-        .filter(ImportJob.id == job_id)
-        .first()
-    )
-
-    if not job:
-        raise HTTPException(
-            status_code=404,
-            detail="Import job not found",
-        )
-
-    records = (
+    query = (
         db.query(ImportRecord)
         .filter(
-            ImportRecord.job_id == job_id,
-            ImportRecord.is_valid.is_(True),
+            ImportRecord.job_id == job_id
         )
-        .order_by(ImportRecord.row_number)
+    )
+
+    # ---------------------------------------------------------
+    # Search
+    # ---------------------------------------------------------
+
+    if search:
+        search_value = f"%{search.strip()}%"
+
+        query = query.filter(
+            or_(
+                ImportRecord.name.ilike(search_value),
+                ImportRecord.email.ilike(search_value),
+                ImportRecord.phone.ilike(search_value),
+                ImportRecord.company.ilike(search_value),
+                ImportRecord.city.ilike(search_value),
+            )
+        )
+
+    # ---------------------------------------------------------
+    # Validation filter
+    # ---------------------------------------------------------
+
+    if is_valid is not None:
+        query = query.filter(
+            ImportRecord.is_valid == is_valid
+        )
+
+    # ---------------------------------------------------------
+    # City filter
+    # ---------------------------------------------------------
+
+    if city:
+        query = query.filter(
+            ImportRecord.city.ilike(city.strip())
+        )
+
+    # ---------------------------------------------------------
+    # Company filter
+    # ---------------------------------------------------------
+
+    if company:
+        query = query.filter(
+            ImportRecord.company.ilike(company.strip())
+        )
+
+    # ---------------------------------------------------------
+    # Total count BEFORE pagination
+    # ---------------------------------------------------------
+
+    total = query.count()
+
+    # ---------------------------------------------------------
+    # Pagination
+    # ---------------------------------------------------------
+
+    offset = (page - 1) * limit
+
+    records = (
+        query
+        .order_by(ImportRecord.row_number.asc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
-    output = io.StringIO()
+    # ---------------------------------------------------------
+    # Total pages
+    # ---------------------------------------------------------
 
-    writer = csv.writer(output)
+    total_pages = ceil(total / limit) if total else 0
 
-    writer.writerow([
-        "name",
-        "email",
-        "phone",
-        "company",
-        "city",
-    ])
-
-    for record in records:
-        writer.writerow([
-            record.name or "",
-            record.email or "",
-            record.phone or "",
-            record.company or "",
-            record.city or "",
-        ])
-
-    output.seek(0)
-
-    filename = f"valid_records_{job_id}.csv"
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="{filename}"'
-            )
-        },
+    return ImportRecordsResponse(
+        job_id=job_id,
+        records=records,
+        page=page,
+        limit=limit,
+        total=total,
+        total_pages=total_pages
     )

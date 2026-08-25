@@ -12,17 +12,20 @@ def validate_email(email: str | None) -> str | None:
 
     return None
 
+
 def validate_name(name: str | None) -> str | None:
     if not name or not name.strip():
         return "Missing name"
 
     return None
 
+
 def validate_company(company: str | None) -> str | None:
     if not company or not company.strip():
         return "Missing company"
 
     return None
+
 
 def validate_phone(phone: str | None) -> str | None:
     if not phone or not phone.strip():
@@ -34,6 +37,14 @@ def validate_phone(phone: str | None) -> str | None:
         return "Invalid phone number"
 
     return None
+
+
+def validate_city(city: str | None) -> str | None:
+    if not city or not city.strip():
+        return "City is required"
+
+    return None
+
 
 def validate_row(row: dict) -> list[str]:
     errors = []
@@ -53,6 +64,10 @@ def validate_row(row: dict) -> list[str]:
     company_error = validate_company(row.get("company"))
     if company_error:
         errors.append(company_error)
+
+    city_error = validate_city(row.get("city"))
+    if city_error:
+        errors.append(city_error)
 
     return errors
 

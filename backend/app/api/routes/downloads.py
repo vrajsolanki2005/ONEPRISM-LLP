@@ -1,42 +1,67 @@
 import csv
 import io
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
-router = APIRouter(prefix="/api/imports", tags=["downloads"])
-
-JOB_RECORDS = {
-    "job-123": [
-        {
-            "id": 1,
-            "row_number": 1,
-            "name": "Rahul",
-            "email": "rahul@example.com",
-            "phone": "9999999999",
-            "company": "Acme",
-            "city": "Delhi",
-            "is_valid": True,
-            "validation_reasons": [],
-        },
-        {
-            "id": 2,
-            "row_number": 2,
-            "name": "Vraj",
-            "email": "vrajgmail.com",
-            "phone": "8888888888",
-            "company": "OnePrism",
-            "city": "Mumbai",
-            "is_valid": False,
-            "validation_reasons": ["email_invalid"],
-        },
-    ]
-}
+from app.database.connection import get_db
+from app.database.models import ImportJob, ImportRecord
 
 
-def _build_csv(records):
-    fieldnames = [
-        "id",
+router = APIRouter(
+    prefix="/api/imports",
+    tags=["downloads"]
+)
+
+
+@router.get("/{job_id}/download")
+def download_import_csv(
+    job_id: str,
+    db: Session = Depends(get_db)
+):
+    # ---------------------------------------------------------
+    # Check job
+    # ---------------------------------------------------------
+
+    job = (
+        db.query(ImportJob)
+        .filter(ImportJob.id == job_id)
+        .first()
+    )
+
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail="Import job not found"
+        )
+
+    # ---------------------------------------------------------
+    # Fetch records
+    # ---------------------------------------------------------
+
+    records = (
+        db.query(ImportRecord)
+        .filter(
+            ImportRecord.job_id == job_id
+        )
+        .order_by(
+            ImportRecord.row_number.asc()
+        )
+        .all()
+    )
+
+    # ---------------------------------------------------------
+    # Generate CSV in memory
+    # ---------------------------------------------------------
+
+    output = io.StringIO(
+        newline=""
+    )
+
+    writer = csv.writer(output)
+
+    writer.writerow([
         "row_number",
         "name",
         "email",
@@ -45,41 +70,34 @@ def _build_csv(records):
         "city",
         "is_valid",
         "validation_reasons",
-    ]
-
-    output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=fieldnames)
-    writer.writeheader()
+    ])
 
     for record in records:
-        writer.writerow(
-            {
-                "id": record.get("id", ""),
-                "row_number": record.get("row_number", ""),
-                "name": record.get("name", ""),
-                "email": record.get("email", ""),
-                "phone": record.get("phone", ""),
-                "company": record.get("company", ""),
-                "city": record.get("city", ""),
-                "is_valid": record.get("is_valid", False),
-                "validation_reasons": "; ".join(record.get("validation_reasons") or []),
-            }
-        )
+        writer.writerow([
+            record.row_number,
+            record.name or "",
+            record.email or "",
+            record.phone or "",
+            record.company or "",
+            record.city or "",
+            record.is_valid,
+            "; ".join(
+                record.validation_reasons or []
+            ),
+        ])
 
-    return output.getvalue().encode("utf-8")
+    output.seek(0)
 
-
-@router.get("/{job_id}/download")
-def download_import_csv(job_id: str):
-    records = JOB_RECORDS.get(job_id)
-    if not records:
-        raise HTTPException(status_code=404, detail="Import job not found")
-
-    csv_bytes = _build_csv(records)
-    filename = f"import_{job_id}.csv"
+    filename = (
+        f"{job.filename.rsplit('.', 1)[0]}_processed.csv"
+    )
 
     return StreamingResponse(
-        io.BytesIO(csv_bytes),
+        iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"'
+            )
+        }
     )
